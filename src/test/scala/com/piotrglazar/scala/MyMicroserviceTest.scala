@@ -2,7 +2,7 @@ package com.piotrglazar.scala
 
 import akka.event.{LoggingAdapter, NoLogging}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
-import com.piotrglazar.scala.api.RandomResponse
+import com.piotrglazar.scala.api.{AddResponse, AddRequest, RandomResponse}
 import com.piotrglazar.scala.app.Service
 import com.typesafe.config.Config
 import akka.http.scaladsl.model.StatusCodes.OK
@@ -22,11 +22,43 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
     // given
     random.shouldReturn(42)
 
-    // when & then
-    Get("/number") ~> routes ~> check {
+    // when
+    val result: RouteTestResult = Get("/number") ~> routes
+
+    // then
+    result ~> check {
       status shouldBe OK
       contentType shouldBe `application/json`
       responseAs[RandomResponse] shouldBe RandomResponse(42)
+    }
+  }
+
+  "Service" should "return a bounded number" in {
+    // given
+    random.shouldReturn(42)
+
+    // when
+    val result: RouteTestResult = Get("/number/50") ~> routes
+
+    // then
+    result ~> check {
+      status shouldBe OK
+      contentType shouldBe `application/json`
+      responseAs[RandomResponse] shouldBe RandomResponse(42)
+    }
+  }
+
+  "Service" should "add numbers for user" in {
+    // given
+    val request: AddRequest = AddRequest(3, 5)
+
+    // when
+    val result: RouteTestResult = Post("/number", request) ~> routes
+
+    // then
+    result ~> check {
+      status shouldBe OK
+      responseAs[AddResponse].value shouldBe 8
     }
   }
 }
