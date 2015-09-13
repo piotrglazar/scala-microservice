@@ -1,15 +1,24 @@
 package com.piotrglazar.scala.app
 
+import java.io.IOException
+
 import akka.actor.ActorSystem
 import akka.event.LoggingAdapter
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.client.RequestBuilding
+import akka.http.scaladsl.marshalling.ToResponseMarshallable
+import akka.http.scaladsl.model.StatusCodes._
+import akka.http.scaladsl.model.{Uri, HttpResponse, HttpRequest}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.PathMatchers.IntNumber
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.Materializer
-import com.piotrglazar.scala.api.{AddRequest, AddResponse, Protocols, RandomResponse}
+import akka.stream.scaladsl.{Sink, Source, Flow}
+import com.piotrglazar.scala.api.{ExchangeRateResponse, AddRequest, AddResponse, Protocols, RandomResponse}
 import com.typesafe.config.Config
 
-import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.{Future, ExecutionContextExecutor}
 
 trait Service extends Protocols {
 
@@ -39,6 +48,35 @@ trait Service extends Protocols {
           complete {
             AddResponse(addRequest.a + addRequest.b)
           }
+        }
+      } ~
+      pathPrefix("finance") {
+        get {
+          complete {
+            fetchCurrencies().map[ToResponseMarshallable] {
+              case Right(response) => response
+              case Left(error) => BadRequest -> error
+            }
+          }
+        }
+      }
+    }
+  }
+
+  lazy val openExchangeRateConnectionFlow: Flow[HttpRequest, HttpResponse, Any] =
+    Http().outgoingConnection(config.getString("openExchangeRate.url"))
+
+  def openExchangeRateRequest(httpRequest: HttpRequest): Future[HttpResponse] =
+    Source.single(httpRequest).via(openExchangeRateConnectionFlow).runWith(Sink.head)
+
+  def fetchCurrencies(): Future[Either[String, ExchangeRateResponse]] = {
+    openExchangeRateRequest(RequestBuilding.Get(Uri("/api/latest.json").withQuery(Map("app_id" -> "40a89e515fec414f846e8ae78fba502f")))).flatMap { response =>
+      response.status match {
+        case OK => Unmarshal(response.entity).to[ExchangeRateResponse].map(Right(_))
+        case _ => Unmarshal(response.entity).to[String].flatMap { entity =>
+          val error = s"OpenExchangeRate request failed with status code ${response.status} and entity $entity"
+          logger.error(error)
+          Future.failed(new IOException(error))
         }
       }
     }
