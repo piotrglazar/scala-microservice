@@ -23,7 +23,7 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
     random.shouldReturn(42)
 
     // when
-    val result: RouteTestResult = Get("/number") ~> routes
+    val result = Get("/number") ~> routes
 
     // then
     result ~> check {
@@ -38,7 +38,7 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
     random.shouldReturn(42)
 
     // when
-    val result: RouteTestResult = Get("/number/50") ~> routes
+    val result = Get("/number/50") ~> routes
 
     // then
     result ~> check {
@@ -50,10 +50,10 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
 
   "Service" should "add numbers for user" in {
     // given
-    val request: AddRequest = AddRequest(3, 5)
+    val request = AddRequest(3, 5)
 
     // when
-    val result: RouteTestResult = Post("/number", request) ~> routes
+    val result = Post("/number", request) ~> routes
 
     // then
     result ~> check {

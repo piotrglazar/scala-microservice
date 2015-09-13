@@ -15,7 +15,7 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.Materializer
 import akka.stream.scaladsl.{Sink, Source, Flow}
-import com.piotrglazar.scala.api.{ExchangeRateResponse, AddRequest, AddResponse, Protocols, RandomResponse}
+import com.piotrglazar.scala.api.{CurrenciesRequest, ExchangeRateApiResponse, AddRequest, AddResponse, Protocols, RandomResponse}
 import com.typesafe.config.Config
 
 import scala.concurrent.{Future, ExecutionContextExecutor}
@@ -30,6 +30,8 @@ trait Service extends Protocols {
   var logger: LoggingAdapter
 
   val random: RandomNumberGenerator
+
+  val currencies: ExchangeRatesFetcher = new ExchangeRatesFetcher
 
   val routes = {
     logRequestResult("my-microservice") {
@@ -51,10 +53,10 @@ trait Service extends Protocols {
         }
       } ~
       pathPrefix("finance") {
-        get {
+        (post & entity(as[CurrenciesRequest])) { currenciesRequest =>
           complete {
             fetchCurrencies().map[ToResponseMarshallable] {
-              case Right(response) => response
+              case Right(response) => currencies.getExchangeRates(response, currenciesRequest.currencies)
               case Left(error) => BadRequest -> error
             }
           }
@@ -69,10 +71,13 @@ trait Service extends Protocols {
   def openExchangeRateRequest(httpRequest: HttpRequest): Future[HttpResponse] =
     Source.single(httpRequest).via(openExchangeRateConnectionFlow).runWith(Sink.head)
 
-  def fetchCurrencies(): Future[Either[String, ExchangeRateResponse]] = {
-    openExchangeRateRequest(RequestBuilding.Get(Uri("/api/latest.json").withQuery(Map("app_id" -> "40a89e515fec414f846e8ae78fba502f")))).flatMap { response =>
+  def openExchangeRateUri(): Uri = Uri(config.getString("openExchangeRate.endpoint"))
+    .withQuery(Map(config.getString("openExchangeRate.appKey") -> config.getString("openExchangeRate.appValue")))
+
+  def fetchCurrencies(): Future[Either[String, ExchangeRateApiResponse]] = {
+    openExchangeRateRequest(RequestBuilding.Get(openExchangeRateUri())).flatMap { response =>
       response.status match {
-        case OK => Unmarshal(response.entity).to[ExchangeRateResponse].map(Right(_))
+        case OK => Unmarshal(response.entity).to[ExchangeRateApiResponse].map(Right(_))
         case _ => Unmarshal(response.entity).to[String].flatMap { entity =>
           val error = s"OpenExchangeRate request failed with status code ${response.status} and entity $entity"
           logger.error(error)
