@@ -31,7 +31,7 @@ trait Service extends Protocols {
 
   val random: RandomNumberGenerator
 
-  val currencies: ExchangeRatesFetcher = new ExchangeRatesFetcher
+  val exchangeRatesService: ExchangeRatesService
 
   val routes = {
     logRequestResult("my-microservice") {
@@ -55,10 +55,7 @@ trait Service extends Protocols {
       pathPrefix("finance") {
         (post & entity(as[CurrenciesRequest])) { currenciesRequest =>
           complete {
-            fetchCurrencies().map[ToResponseMarshallable] {
-              case Right(response) => currencies.getExchangeRates(response, currenciesRequest.currencies)
-              case Left(error) => BadRequest -> error
-            }
+            fetchCurrencies().map[ToResponseMarshallable](exchangeRatesService.getExchangeRates(_, currenciesRequest.currencies))
           }
         }
       }
@@ -74,10 +71,10 @@ trait Service extends Protocols {
   def openExchangeRateUri(): Uri = Uri(config.getString("openExchangeRate.endpoint"))
     .withQuery(Map(config.getString("openExchangeRate.appKey") -> config.getString("openExchangeRate.appValue")))
 
-  def fetchCurrencies(): Future[Either[String, ExchangeRateApiResponse]] = {
+  def fetchCurrencies(): Future[ExchangeRateApiResponse] = {
     openExchangeRateRequest(RequestBuilding.Get(openExchangeRateUri())).flatMap { response =>
       response.status match {
-        case OK => Unmarshal(response.entity).to[ExchangeRateApiResponse].map(Right(_))
+        case OK => Unmarshal(response.entity).to[ExchangeRateApiResponse]
         case _ => Unmarshal(response.entity).to[String].flatMap { entity =>
           val error = s"OpenExchangeRate request failed with status code ${response.status} and entity $entity"
           logger.error(error)
