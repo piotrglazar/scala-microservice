@@ -18,9 +18,12 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
   override def testConfigSource = "akka.loglevel = WARNING"
   override def config: Config = testConfig
 
-  override lazy val openExchangeRateConnectionFlow = Flow[HttpRequest].map { request =>
-    HttpResponse(status = OK, entity = marshal(ExchangeRateApiResponse("test", "test", 0, "USD", Map("PLN" -> BigDecimal("3.0")))))
-  }
+  val exchangeRateStubServer = new ExchangeRateStubServer(executor, materializer)
+
+//  override lazy val openExchangeRateConnectionFlow = Flow[HttpRequest].map { request =>
+//    HttpResponse(status = OK, entity = marshal(ExchangeRateApiResponse("test", "test", 0, "USD", Map("PLN" -> BigDecimal("3.0")))))
+//  }
+  override lazy val openExchangeRateConnectionFlow = exchangeRateStubServer.flow()
 
   override val exchangeRatesService: ExchangeRatesService = new ExchangeRatesService
   override val random: TestRandomNumberGenerator = new TestRandomNumberGenerator
@@ -72,6 +75,7 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
 
   "Service" should "fetch info from ExchangeRates" in {
     // given
+    exchangeRateStubServer.withEntity("USD", Map("PLN" -> BigDecimal("3.0")))
     val request = CurrenciesRequest(Set("PLN"))
 
     // when
@@ -80,12 +84,15 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
     // then
     result ~> check {
       status shouldBe OK
-      responseAs[CurrenciesResponse].rates shouldBe Map("PLN" -> BigDecimal("3.0"))
+      val response: CurrenciesResponse = responseAs[CurrenciesResponse]
+      response.rates shouldBe Map("PLN" -> BigDecimal("3.0"))
+      response.base shouldBe "USD"
     }
   }
 
   "Service" should "not break when there is no data for currency" in {
     // given
+    exchangeRateStubServer.withEntity("EUR", Map("PLN" -> BigDecimal("3.0")))
     val request = CurrenciesRequest(Set("PLN", "XYZ"))
 
     // when
@@ -94,7 +101,9 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
     // then
     result ~> check {
       status shouldBe OK
-      responseAs[CurrenciesResponse].rates shouldBe Map("PLN" -> BigDecimal("3.0"))
+      val response: CurrenciesResponse = responseAs[CurrenciesResponse]
+      response.rates shouldBe Map("PLN" -> BigDecimal("3.0"))
+      response.base shouldBe "EUR"
     }
   }
 }

@@ -8,4 +8,4 @@ case class AddResponse(calculationResult: Int) extends Response
 
 case class ExchangeRateApiResponse(disclaimer: String, license: String, timestamp: Long, base: String, rates: Map[String, BigDecimal]) extends Response
 
-case class CurrenciesResponse(rates: Map[String, BigDecimal]) extends Response
+case class CurrenciesResponse(base: String, rates: Map[String, BigDecimal]) extends Response
