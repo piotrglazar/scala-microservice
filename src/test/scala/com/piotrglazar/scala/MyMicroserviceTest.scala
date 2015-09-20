@@ -1,16 +1,13 @@
 package com.piotrglazar.scala
 
 import akka.event.{LoggingAdapter, NoLogging}
-import akka.http.scaladsl.model.{HttpResponse, HttpRequest}
+import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
+import akka.http.scaladsl.model.ContentTypes.`application/json`
+import akka.http.scaladsl.model.StatusCodes.{InternalServerError, OK}
 import akka.http.scaladsl.testkit.ScalatestRouteTest
-import akka.stream.scaladsl.Flow
-import com.piotrglazar.scala.api.{CurrenciesResponse, CurrenciesRequest, ExchangeRateApiResponse, AddResponse, AddRequest, RandomResponse}
+import com.piotrglazar.scala.api.{AddRequest, AddResponse, CurrenciesRequest, CurrenciesResponse, RandomResponse}
 import com.piotrglazar.scala.app.{ExchangeRatesService, Service}
 import com.typesafe.config.Config
-import akka.http.scaladsl.model.StatusCodes.OK
-import akka.http.scaladsl.model.ContentTypes.`application/json`
-import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-
 import org.scalatest.{FlatSpec, Matchers}
 
 class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest with Service {
@@ -18,11 +15,8 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
   override def testConfigSource = "akka.loglevel = WARNING"
   override def config: Config = testConfig
 
-  val exchangeRateStubServer = new ExchangeRateStubServer(executor, materializer)
+  val exchangeRateStubServer = new ExchangeRatesStubServer(executor, materializer)
 
-//  override lazy val openExchangeRateConnectionFlow = Flow[HttpRequest].map { request =>
-//    HttpResponse(status = OK, entity = marshal(ExchangeRateApiResponse("test", "test", 0, "USD", Map("PLN" -> BigDecimal("3.0")))))
-//  }
   override lazy val openExchangeRateConnectionFlow = exchangeRateStubServer.flow()
 
   override val exchangeRatesService: ExchangeRatesService = new ExchangeRatesService
@@ -104,6 +98,21 @@ class MyMicroserviceTest extends FlatSpec with Matchers with ScalatestRouteTest 
       val response: CurrenciesResponse = responseAs[CurrenciesResponse]
       response.rates shouldBe Map("PLN" -> BigDecimal("3.0"))
       response.base shouldBe "EUR"
+    }
+  }
+
+  "Service" should "not break when request to exchange rates fails" in {
+    // given
+    exchangeRateStubServer.withError(InternalServerError, "test exception")
+    val request = CurrenciesRequest(Set("PLN"))
+
+    // when
+    val result = Post("/finance", request) ~> routes
+
+    // then
+    result ~> check {
+      status shouldBe InternalServerError
+      responseAs[String] shouldBe "There was an internal server error."
     }
   }
 }
